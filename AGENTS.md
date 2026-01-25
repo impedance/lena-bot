@@ -8,6 +8,9 @@
 
 ## Build, Test, and Development Commands
 This repository does not define a build system or test runner.
+- Use a local virtual environment for development and running tests:
+  - `python -m venv .venv`
+  - `source .venv/bin/activate`
 - Run a bot directly with Python:
   - `python bots_fonctionnels/bot_maison3.py`
   - `python bots_fonctionnels/bot_maisonRabotaetV1.py`
