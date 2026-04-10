@@ -1,9 +1,32 @@
 import os
 
 
+def _load_local_env() -> None:
+    env_path = os.path.join(os.getcwd(), ".env")
+    if not os.path.exists(env_path):
+        return
+
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    os.environ.setdefault(key, value)
+    except OSError:
+        return
+
+
+_load_local_env()
+
+
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "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")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
 SEARCH_PROVIDER_ORDER = os.getenv("SEARCH_PROVIDER_ORDER", "google_cse,tavily,brave")
 
