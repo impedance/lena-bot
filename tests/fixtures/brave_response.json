@@ -1,0 +1,11 @@
+{
+  "web": {
+    "results": [
+      {
+        "title": "Maison familiale",
+        "url": "https://example.com/house-1",
+        "description": "Belle maison avec jardin."
+      }
+    ]
+  }
+}

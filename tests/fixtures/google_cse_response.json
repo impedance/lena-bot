@@ -1,0 +1,10 @@
+{
+  "items": [
+    {
+      "title": "Maison familiale",
+      "link": "https://example.com/house-1",
+      "snippet": "Belle maison avec jardin.",
+      "displayLink": "example.com"
+    }
+  ]
+}
