@@ -73,3 +73,18 @@ def test_criteria_blackbox_matrix():
     for _, result, expected_status, expected_note in cases:
         assert result.status == expected_status
         assert result.note == expected_note
+
+
+def test_fallback_relaxes_city_check():
+    """FALLBACK level does not penalise missing city — returns OK where STRICT returns MAYBE_CITY."""
+    url = "https://example.com/house"
+    title = "Maison"
+    snippet = "120 m2 4 chambres avec jardin"
+
+    strict_result = _check(url, title, snippet, level="STRICT")
+    fallback_result = _check(url, title, snippet, level="FALLBACK")
+
+    assert strict_result.status == "MAYBE_CITY"
+    assert strict_result.note == "city_unknown"
+    assert fallback_result.status == "OK"
+    assert fallback_result.note == ""

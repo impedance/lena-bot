@@ -1,9 +1,12 @@
+import logging
 import re
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 import requests
 
 from lena_bot.config import ALLOWED_CITIES, DISALLOWED_CITY_HINTS, RESOLVE_TIMEOUT_SEC
+
+logger = logging.getLogger(__name__)
 
 
 TRACKING_KEYS = {"gclid", "fbclid"}
@@ -27,7 +30,8 @@ def normalize_url(url: str) -> str:
         new_query = urlencode(q, doseq=True)
         p2 = p._replace(query=new_query)
         return urlunparse(p2).rstrip("?&")
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.debug("normalize_url failed for %r: %s", url, e)
         return url
 
 
@@ -36,7 +40,8 @@ def domain_of(url: str) -> str:
         host = urlparse(url).netloc.lower()
         host = re.sub(r"^www\.", "", host)
         return host
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.debug("domain_of failed for %r: %s", url, e)
         return ""
 
 
@@ -92,7 +97,7 @@ def is_homepage(url: str) -> bool:
     try:
         p = urlparse(url)
         return (p.path in ("", "/")) and not p.query and not p.fragment
-    except Exception:
+    except (ValueError, TypeError):
         return False
 
 
@@ -122,7 +127,8 @@ def extract_direct_url_from_query(original_url: str) -> str:
                 if cand.startswith("http://") or cand.startswith("https://"):
                     return normalize_url(cand)
         return ""
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.debug("extract_direct_url_from_query failed for %r: %s", original_url, e)
         return ""
 
 
@@ -159,7 +165,11 @@ def resolve_direct_url_soft(original_url: str, session: requests.Session) -> tup
             return final_url, "redirect"
 
         return "", "no_canonical"
-    except Exception:
+    except requests.RequestException as e:
+        logger.debug("resolve_direct_url_soft request failed for %r: %s", original_url, e)
+        return "", "resolve_error"
+    except (ValueError, TypeError) as e:
+        logger.debug("resolve_direct_url_soft parse failed for %r: %s", original_url, e)
         return "", "resolve_error"
 
 
@@ -207,5 +217,9 @@ def expand_catalog_page(url: str, session: requests.Session, max_links: int) -> 
             seen.add(item)
             uniq.append(item)
         return uniq
-    except Exception:
+    except requests.RequestException as e:
+        logger.debug("expand_catalog_page request failed for %r: %s", url, e)
+        return []
+    except (ValueError, TypeError) as e:
+        logger.debug("expand_catalog_page parse failed for %r: %s", url, e)
         return []

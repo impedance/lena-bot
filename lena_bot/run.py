@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 from datetime import datetime
@@ -38,6 +39,8 @@ from lena_bot.utils.url_tools import (
     resolve_direct_url_soft,
 )
 
+logger = logging.getLogger(__name__)
+
 
 PROVIDER_REGISTRY = {
     "google_cse": GoogleCSEProvider,
@@ -55,11 +58,11 @@ def build_enabled_providers():
             continue
         provider_cls = PROVIDER_REGISTRY.get(name)
         if not provider_cls:
-            print(f"⚠️ Unknown provider in SEARCH_PROVIDER_ORDER: {name}. Skip.")
+            logger.warning("Unknown provider in SEARCH_PROVIDER_ORDER: %s. Skip.", name)
             continue
         provider = provider_cls()
         if not provider.is_enabled():
-            print(f"ℹ️ Provider disabled (missing credentials): {name}")
+            logger.info("Provider disabled (missing credentials): %s", name)
             continue
         providers.append(provider)
         seen.add(name)
@@ -82,9 +85,10 @@ def run():
         calls_today = get_cse_calls(conn)
         has_google = any(p.name == "google_cse" for p in providers)
         if has_google and calls_today >= MAX_CSE_CALLS_PER_DAY:
-            print(
-                f"⚠️ Google CSE quota already reached today ({calls_today}/{MAX_CSE_CALLS_PER_DAY}); "
-                "Google provider will be skipped."
+            logger.warning(
+                "Google CSE quota already reached today (%d/%d); Google provider will be skipped.",
+                calls_today,
+                MAX_CSE_CALLS_PER_DAY,
             )
 
         session = requests.Session()
@@ -113,13 +117,19 @@ def run():
                         provider_succeeded = False
                         for provider in providers:
                             if provider.name == "google_cse" and get_cse_calls(conn) >= MAX_CSE_CALLS_PER_DAY:
-                                print("⚠️ Google quota reached during run, skipping provider google_cse.")
+                                logger.warning("Google quota reached during run, skipping provider google_cse.")
                                 continue
 
                             provider_inserted = 0
                             inserted_page1 = 0
 
-                            def handle_result(res):
+                            def handle_result(
+                                res,
+                                _level=level,
+                                _site_group=site_group,
+                                _group_name=group_name,
+                                _full_query=full_query,
+                            ):
                                 nonlocal resolve_left, expand_left, inserted_page1, provider_inserted
 
                                 raw_url = (res.url or "").strip()
@@ -136,7 +146,7 @@ def run():
                                     url = extracted
                                     domain = domain or domain_of(url)
 
-                                cr = criteria_check(url, title, snippet, level)
+                                cr = criteria_check(url, title, snippet, _level)
                                 if cr.status == "EXCLUDED":
                                     return
 
@@ -165,16 +175,16 @@ def run():
                                             expanded = expand_catalog_page(url, session, MAX_LINKS_PER_CATALOG_PAGE)
                                             for eurl in expanded:
                                                 edom = domain_of(eurl)
-                                                ecr = criteria_check(eurl, title, snippet, level)
+                                                ecr = criteria_check(eurl, title, snippet, _level)
                                                 if ecr.status == "EXCLUDED":
                                                     continue
                                                 erow = {
                                                     "date_detection": datetime.now().strftime("%Y-%m-%d"),
                                                     "heure_detection": datetime.now().strftime("%H:%M:%S"),
-                                                    "site_group": site_group,
-                                                    "query_group": group_name,
-                                                    "query_level": level,
-                                                    "query_text": full_query,
+                                                    "site_group": _site_group,
+                                                    "query_group": _group_name,
+                                                    "query_level": _level,
+                                                    "query_text": _full_query,
                                                     "source_domain": edom,
                                                     "title": title,
                                                     "snippet": snippet,
@@ -189,7 +199,7 @@ def run():
                                                 if insert_listing(conn, erow) == 1:
                                                     new_rows_all.append(erow)
                                                     provider_inserted += 1
-                                                    if level == "STRICT" and ecr.status == "OK":
+                                                    if _level == "STRICT" and ecr.status == "OK":
                                                         new_rows_tg.append(erow)
 
                                         if RESOLVE_DIRECT_LINKS and resolve_left > 0:
@@ -206,10 +216,10 @@ def run():
                                 row = {
                                     "date_detection": datetime.now().strftime("%Y-%m-%d"),
                                     "heure_detection": datetime.now().strftime("%H:%M:%S"),
-                                    "site_group": site_group,
-                                    "query_group": group_name,
-                                    "query_level": level,
-                                    "query_text": full_query,
+                                    "site_group": _site_group,
+                                    "query_group": _group_name,
+                                    "query_level": _level,
+                                    "query_text": _full_query,
                                     "source_domain": domain or domain_of(final_url_to_store),
                                     "title": title,
                                     "snippet": snippet,
@@ -226,7 +236,7 @@ def run():
                                     inserted_page1 += 1
                                     provider_inserted += 1
                                     new_rows_all.append(row)
-                                    if level == "STRICT" and cr.status == "OK":
+                                    if _level == "STRICT" and cr.status == "OK":
                                         new_rows_tg.append(row)
 
                             try:
@@ -234,9 +244,13 @@ def run():
                                 if provider.name == "google_cse":
                                     inc_cse_calls(conn, 1)
                             except requests.RequestException as e:
-                                print(
-                                    f"⚠️ Provider error ({provider.name}, page1, level={level}, "
-                                    f"site_group={site_group}, chunk={chunk_idx}): {e}"
+                                logger.warning(
+                                    "Provider error (%s, page1, level=%s, site_group=%s, chunk=%d): %s",
+                                    provider.name,
+                                    level,
+                                    site_group,
+                                    chunk_idx,
+                                    e,
                                 )
                                 time.sleep(SLEEP_BETWEEN_CSE_CALLS)
                                 continue
@@ -248,7 +262,7 @@ def run():
 
                             if provider.should_fetch_page11(len(page1_results), inserted_page1):
                                 if provider.name == "google_cse" and get_cse_calls(conn) >= MAX_CSE_CALLS_PER_DAY:
-                                    print("⚠️ Google quota reached before page11; skipping second page.")
+                                    logger.warning("Google quota reached before page11; skipping second page.")
                                 else:
                                     try:
                                         page11_results = provider.search(
@@ -259,9 +273,13 @@ def run():
                                         if provider.name == "google_cse":
                                             inc_cse_calls(conn, 1)
                                     except requests.RequestException as e:
-                                        print(
-                                            f"⚠️ Provider error ({provider.name}, page11, level={level}, "
-                                            f"site_group={site_group}, chunk={chunk_idx}): {e}"
+                                        logger.warning(
+                                            "Provider error (%s, page11, level=%s, site_group=%s, chunk=%d): %s",
+                                            provider.name,
+                                            level,
+                                            site_group,
+                                            chunk_idx,
+                                            e,
                                         )
                                         time.sleep(SLEEP_BETWEEN_CSE_CALLS)
                                         page11_results = []
@@ -271,9 +289,14 @@ def run():
 
                                     time.sleep(SLEEP_BETWEEN_CSE_CALLS)
 
-                            print(
-                                f"ℹ️ Provider {provider.name} -> +{provider_inserted} new rows "
-                                f"(level={level}, site_group={site_group}, chunk={chunk_idx}, query_group={group_name})"
+                            logger.info(
+                                "Provider %s -> + %d new rows (level=%s, site_group=%s, chunk=%d, query_group=%s)",
+                                provider.name,
+                                provider_inserted,
+                                level,
+                                site_group,
+                                chunk_idx,
+                                group_name,
                             )
 
                             if provider_inserted > 0:
@@ -281,9 +304,12 @@ def run():
                                 break
 
                         if not provider_succeeded:
-                            print(
-                                f"ℹ️ No provider yielded new rows "
-                                f"(level={level}, site_group={site_group}, chunk={chunk_idx}, query_group={group_name})."
+                            logger.info(
+                                "No provider yielded new rows (level=%s, site_group=%s, chunk=%d, query_group=%s).",
+                                level,
+                                site_group,
+                                chunk_idx,
+                                group_name,
                             )
 
             if level == "STRICT" and ENABLE_FALLBACK_QUERY and len(new_rows_tg) >= 8:
@@ -292,19 +318,19 @@ def run():
     finally:
         try:
             conn.close()
-        except Exception:
+        except Exception:  # intentional: cleanup should never propagate
             pass
 
     if not new_rows_all:
-        print("ℹ️ Rien de nouveau.")
+        logger.info("Rien de nouveau.")
         return
 
     csv_file = write_run_csv(new_rows_all)
     if csv_file:
-        print(f"📄 CSV créé : {csv_file}")
+        logger.info("CSV créé : %s", csv_file)
 
     if not new_rows_tg:
-        print("ℹ️ Rien à envoyer sur Telegram (STRICT OK uniquement).")
+        logger.info("Rien à envoyer sur Telegram (STRICT OK uniquement).")
         return
 
     to_send = new_rows_tg[:MAX_ITEMS_PER_RUN_TO_SEND]
@@ -348,4 +374,4 @@ def run():
         if chunk:
             telegram_send(chunk)
 
-    print(f"✅ Envoyé sur Telegram : {len(to_send)} annonces (STRICT OK).")
+    logger.info("Envoyé sur Telegram : %d annonces (STRICT OK).", len(to_send))

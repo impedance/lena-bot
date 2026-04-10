@@ -1,6 +1,10 @@
+import logging
+
 import requests
 
 from lena_bot.config import TG_CHAT, TG_TOKEN
+
+logger = logging.getLogger(__name__)
 
 
 def telegram_send(text: str):

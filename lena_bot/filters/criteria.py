@@ -1,8 +1,11 @@
+import logging
 import re
 
 from lena_bot.config import MIN_SURFACE
 from lena_bot.models import CriteriaResult
 from lena_bot.utils.url_tools import city_presence, text_blob
+
+logger = logging.getLogger(__name__)
 
 
 RENTAL_WORDS = ["location", "à louer", "a louer", "louer", "/locations", "/location"]
@@ -38,7 +41,7 @@ def criteria_check(url: str, title: str, snippet: str, level: str) -> CriteriaRe
     for m in SURFACE_RE.findall(text):
         try:
             surfaces.append(int(m[0]))
-        except Exception:
+        except ValueError:
             pass
     if surfaces and max(surfaces) < MIN_SURFACE:
         return CriteriaResult("EXCLUDED", f"surface<{MIN_SURFACE}")
@@ -49,7 +52,7 @@ def criteria_check(url: str, title: str, snippet: str, level: str) -> CriteriaRe
     for m in CH_RE.findall(text):
         try:
             ch.append(int(m[0]))
-        except Exception:
+        except ValueError:
             pass
     if ch and max(ch) < 3:
         return CriteriaResult("EXCLUDED", "bedrooms<3")
